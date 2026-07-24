@@ -1,0 +1,208 @@
+clear all; clc; close all;
+
+% CONTROL CINEMATICO DE UN ROBOT DIFERENCIAL
+% El robot debe llegar a una posicion deseada [xd, yd]
+
+% TIEMPO DE SIMULACION
+ts = 20;          % tiempo total [s]
+ti = 0.01;        % paso de integracion [s]
+t = 0:ti:ts;
+
+% PARAMETROS DEL ROBOT
+L = 0.36;         % distancia entre ruedas [m]
+r = 0.06;         % radio de ruedas [m]
+
+% CONDICIONES INICIALES
+x(1) = 0;         % posicion inicial X [m]
+y(1) = 0;         % posicion inicial Y [m]
+theta(1) = 0;     % orientacion inicial [rad]
+
+% POSICION DESEADA
+xd = 5;           % meta en X [m]
+yd = 5;           % meta en Y [m]
+
+% GANANCIAS DEL CONTROLADOR
+k_rho = .3;      % ganancia de avance
+k_theta = 4;    % ganancia de giro
+
+% INICIALIZACION DE VARIABLES
+rho = zeros(1,length(t));
+e_theta = zeros(1,length(t));
+
+u = zeros(1,length(t));
+w = zeros(1,length(t));
+u_real =  zeros(1,length(t));
+w_real =  zeros(1,length(t));
+vD = zeros(1,length(t));
+vI = zeros(1,length(t));
+
+thetaDot_D = zeros(1,length(t));
+thetaDot_I = zeros(1,length(t));
+thetaDot_D_sat = zeros(1,length(t));
+thetaDot_I_sat = zeros(1,length(t));
+
+% SIMULACION
+for k = 1:length(t)-1
+
+    % ERRORES DE POSICION
+    ex = xd - x(k);
+    ey = yd - y(k);
+
+    % Distancia hacia la meta
+    rho(k) = sqrt(ex^2 + ey^2);
+
+    % Angulo deseado hacia la meta
+    theta_d = atan2(ey,ex);
+
+    % Error angular normalizado
+    e_theta(k) = atan2(sin(theta_d - theta(k)), cos(theta_d - theta(k)));
+
+    % CONTROL CINEMATICO
+    u(k) = k_rho*rho(k);
+    w(k) = k_theta*e_theta(k);
+
+%   Detener si llega cerca de la meta
+    if rho(k) < 0.03
+        u(k) = 0;
+        w(k) = 0;
+    end
+% % -------------------- INICIO saturacion ----------------------------------
+% % Cinematica inversa: velocidades de las ruedas
+thetaDot_D(k) = (u(k) + (L/2)*w(k))/r;
+thetaDot_I(k) = (u(k) - (L/2)*w(k))/r;
+
+thetaDot_max = 20;   % Velocidad angular maxima [rad/s]
+
+% % Saturacion proporcional
+valor_maximo(k) = max(abs([thetaDot_D(k), thetaDot_I(k)]));
+
+if valor_maximo(k) > thetaDot_max
+    alpha = thetaDot_max/valor_maximo(k);
+
+    thetaDot_D_sat(k) = alpha*thetaDot_D(k);
+    thetaDot_I_sat(k) = alpha*thetaDot_I(k);
+else
+    thetaDot_D_sat(k) = thetaDot_D(k);
+    thetaDot_I_sat(k) = thetaDot_I(k);
+end
+% 
+% % Velocidades reales del robot despues de saturar
+u_real(k) = (r/2)*(thetaDot_D_sat(k) + thetaDot_I_sat(k));
+w_real(k) = (r/L)*(thetaDot_D_sat(k) - thetaDot_I_sat(k));
+x(k+1) = x(k) + u_real(k)*cos(theta(k))*ti;
+y(k+1) = y(k) + u_real(k)*sin(theta(k))*ti;
+theta(k+1) = theta(k) + w_real(k)*ti;
+% % -------------------- FIN saturacion ----------------------------------
+ 
+% %     % CINEMATICA INVERSA HACIA LAS RUEDAS
+%     vD(k) = u(k) + (L/2)*w(k);
+%     vI(k) = u(k) - (L/2)*w(k);
+%
+%     theta_punto_D(k) = vD(k)/r;
+%     theta_punto_I(k) = vI(k)/r;
+% 
+%     % MODELO CINEMATICO DEL ROBOT
+%     x(k+1) = x(k) + ti*(u(k)*cos(theta(k)));
+%     y(k+1) = y(k) + ti*(u(k)*sin(theta(k)));
+%     theta(k+1) = theta(k) + ti*w(k);
+
+end
+
+rho(end) = rho(end-1);
+e_theta(end) = e_theta(end-1);
+u(end) = u(end-1);
+w(end) = w(end-1);
+vD(end) = vD(end-1);
+vI(end) = vI(end-1);
+thetaDot_D(end) = thetaDot_D(end-1);
+thetaDot_I(end) = thetaDot_I(end-1);
+thetaDot_D_sat(end) = thetaDot_D_sat(end-1);
+thetaDot_I_sat(end) = thetaDot_I_sat(end-1);
+
+%%
+% GRAFICA DE TRAYECTORIA
+figure(1)
+plot(x,y,'LineWidth',4)
+hold on
+plot(x(1),y(1),'go','MarkerSize',12,'LineWidth',3,'MarkerFaceColor','g')
+plot(xd,yd,'rp','MarkerSize',18,'LineWidth',3,'MarkerFaceColor','r')
+plot(x(end),y(end),'ks','MarkerSize',12,'LineWidth',3,'MarkerFaceColor','k')
+
+xlabel("Posicion X [m]")
+ylabel("Posicion Y [m]")
+title("Control cinematico de robot diferencial")
+legend("Trayectoria","Inicio","Meta","Final")
+grid on
+axis equal
+set(gca,'FontSize',16)
+
+% GRAFICAS DE ESTADOS
+figure(2)
+
+subplot(3,1,1)
+plot(t,x,'LineWidth',3)
+grid on
+ylabel("x [m]")
+title("Posicion en X")
+
+subplot(3,1,2)
+plot(t,y,'LineWidth',3)
+grid on
+ylabel("y [m]")
+title("Posicion en Y")
+
+subplot(3,1,3)
+plot(t,theta,'LineWidth',3)
+grid on
+ylabel("theta [rad]")
+xlabel("Tiempo [s]")
+title("Orientacion del robot")
+
+% GRAFICAS DE ERRORES
+figure(3)
+
+subplot(2,1,1)
+plot(t,rho,'LineWidth',3)
+grid on
+ylabel("rho [m]")
+title("Distancia a la meta")
+
+subplot(2,1,2)
+plot(t,e_theta,'LineWidth',3)
+grid on
+ylabel("e theta [rad]")
+xlabel("Tiempo [s]")
+title("Error angular")
+
+% GRAFICAS DE CONTROL
+figure(4)
+
+subplot(2,1,1)
+plot(t,u,'LineWidth',3)
+grid on
+ylabel("u [m/s]")
+title("Velocidad lineal calculada por el controlador")
+
+subplot(2,1,2)
+plot(t,w,'LineWidth',3)
+grid on
+ylabel("w [rad/s]")
+xlabel("Tiempo [s]")
+title("Velocidad angular calculada por el controlador")
+
+% GRAFICAS DE VELOCIDADES DE RUEDAS
+figure(5)
+subplot(2,1,1)
+plot(t,thetaDot_D,t, thetaDot_D_sat, 'LineWidth',3)
+grid on
+ylabel("$\dot{\theta}_D$ [rad/s]", Interpreter="latex")
+title("Velocidad angular rueda derecha")
+set(gca,'FontSize',16)
+
+subplot(2,1,2)
+plot(t,thetaDot_I,t,thetaDot_I_sat,'LineWidth',3)
+grid on
+ylabel("$\dot{\theta}_D$ [rad/s]", Interpreter="latex")
+xlabel("Tiempo [s]")
+title("Velocidad angular rueda izquierda")
+set(gca,'FontSize',16)
